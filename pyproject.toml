@@ -11,6 +11,9 @@ dependencies = [
     "kafka-python>=2.0.2",
     "rich>=13.7.0",
     "boltons>=23.1.1",
+    "ipython>=8.18.1",
+    "pydantic>=2.5.2",
+    "wrapt>=1.16.0",
 ]
 requires-python = ">=3.11"
 readme = "README.md"
@@ -24,6 +27,8 @@ dev = [
     "thx>=0.5.1",
     "nox>=2023.4.22",
     "mutmut>=2.4.4",
+    "ipython>=8.18.1",
+    "black>=24.1a1",
 ]
 [build-system]
 requires = ["pdm-backend"]
