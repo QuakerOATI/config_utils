@@ -111,14 +111,20 @@ class BatchableLogHandler(logging.Handler):
 
 
 class MongoLogHandler(BatchableLogHandler):
+    """Basic logging facility for MongoDB.
+
+    Based on the implementation in `log4mongo <https://github.com/log4mongo/log4mongo-python/>`_.
+    """
+
     def __init__(
         self,
         mongo_config: MongoConfig,
+        level: LogLevel = logging.NOTSET,
         buffer_size: int = -1,
         buffer_timeout: float = -1,
         raise_on_error: bool = True,
     ) -> None:
-        super().__init__(buffer_size, buffer_timeout)
+        super().__init__(level, buffer_size, buffer_timeout)
         self._collection, self._client, self._db = self._get_connection(mongo_config)
 
     def _get_connection(
