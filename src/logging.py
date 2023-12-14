@@ -1,17 +1,17 @@
-import configparser
-import json
 import logging
+import multiprocessing as mp
 import threading
 import time
-from abc import ABC, abstractmethod
-from logging.handlers import TimedRotatingFileHandler
-from queue import Queue
-from typing import (Any, Callable, List, Literal, Tuple, TypeAlias, TypeVar,
-                    Union)
+from logging.handlers import (QueueHandler, QueueListener,
+                              TimedRotatingFileHandler)
+from pathlib import Path
+from typing import (Any, Callable, List, Literal, Optional, Tuple, TypeAlias,
+                    TypeVar, Union)
 
 import rich
-import yaml
 from pymongo import MongoClient
+from pymongo.collection import Collection
+from pymongo.database import Database
 from pymongo.errors import ServerSelectionTimeoutError
 
 from .configuration import MongoConfig
@@ -27,6 +27,14 @@ LogLevel: TypeAlias = Union[
     ],
     int,
 ]
+
+_manager = None
+
+
+def setup_logging(manager: Optional[mp.Manager]) -> None:
+    global _manager
+    if _manager is None:
+        _manager = manager
 
 
 def _filter_loglevels_inverse(
@@ -129,15 +137,13 @@ class MongoLogHandler(BatchableLogHandler):
 
     def _get_connection(
         self, config: MongoConfig
-    ) -> Tuple[
-        pymongo.collection.Collection, pymongo.MongoClient, pymongo.database.Database
-    ]:
-        client = pymongo.MongoClient(
-            host=mongo_config.host,
-            port=mongo_config.port,
-            username=mongo_config.username,
-            password=mongo_config.password,
-            authSourth=mongo_config.authentication_db,
+    ) -> Tuple[Collection, MongoClient, Database]:
+        client = MongoClient(
+            host=config.host,
+            port=config.port,
+            username=config.username,
+            password=config.password,
+            authSource=config.authentication_db,
         )
         try:
             if not client.is_primary:
@@ -158,3 +164,36 @@ class MongoLogHandler(BatchableLogHandler):
     def emit_many(self, records: List[logging.LogRecord]) -> None:
         if self._collection is not None:
             self._collection.insert_many(self._buffer)
+
+
+class AsyncLoggerFactory:
+    def __init__(self, *handlers):
+        ...
+
+
+def get_mp_logger(handler):
+    queue = mp.Queue(-1)
+    proxy_handler = QueueHandler(queue)
+    listener = QueueListener(queue)
+
+
+SENTINEL = object()
+_mp_log_handlers = {}
+_mp_logger = mp.log_to_stderr(level=logging.WARNING)
+
+
+def register_mp_log_handler(handler: logging.LogHandler, handler_name: str) -> None:
+    queue = mp.Queue(-1)
+
+    def listener():
+        while True:
+            record = queue.get()
+            try:
+                if record is SENTINEL:
+                    break
+                logger = logging.getLogger(record.name)
+                logger.handle(record)
+            except Exception:
+                logging.getLogger().exception(
+                    f"Exception in listener process for multiprocessing log handler {handler_name}"
+                )
