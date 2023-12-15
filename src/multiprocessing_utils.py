@@ -72,7 +72,7 @@ class QueueListener(Generic[MessageType, ResultType]):
         queue: Queue,
         handler: Callable[[MessageType], ResultType],
         stop_event: Event = None,
-        reraise: bool = True,
+        raise_on_exc: bool = True,
     ) -> None:
         """
         Args:
@@ -80,13 +80,13 @@ class QueueListener(Generic[MessageType, ResultType]):
             handler: callable to run on each dequeued message
             stop_event: optional process-synchronized event to signal the
                 listener to stop
-            reraise: specifies whether the listener should swallow
+            raise_on_exc: specifies whether the listener should swallow
                 exceptions or reraise them (default)
         """
         self.queue = queue
         self.handler = handler
         self.stop_event = stop_event if stop_event is not None else Event()
-        self.reraise = reraise
+        self.raise_on_exc = raise_on_exc
 
     def _should_stop(self) -> bool:
         return self.stop_event is None or self.stop_event.is_set()
@@ -101,7 +101,7 @@ class QueueListener(Generic[MessageType, ResultType]):
                 # TODO: check this (cf. mp.managers.Server.accepter implementation)
                 continue
             except Exception:
-                if self.reraise:
+                if self.raise_on_exc:
                     raise
             t = threading.Thread(target=self.handler, args=(msg,))
             t.daemon = True
@@ -146,7 +146,7 @@ class QueueListenerDaemon(Generic[MessageType, ResultType]):
         ctx: mp.context.BaseContext,
         queue: mp.queues.Queue,
         handler: Callable[[MessageType], ResultType],
-        init_logger: Callable[None, None],
+        initializer: Callable[None, None],
         raise_on_exc: bool = True,
     ) -> None:
         """
@@ -154,7 +154,7 @@ class QueueListenerDaemon(Generic[MessageType, ResultType]):
             ctx: multiprocessing context to use for creating processes and
                 synchronization primitives
             queue: multiprocessing queue to process messages from
-            init_logger: configuration function to call in the listener
+            initializer: configuration function to call in the listener
                 subprocess before starting the listener
             raise_on_exc: whether to raise exceptions or issue warnings
         """
@@ -165,8 +165,8 @@ class QueueListenerDaemon(Generic[MessageType, ResultType]):
             self._stop_event,
             raise_on_exc,
         )
-        self._daemon = daemonize(self._listener.start, initializer=self.init_logger)
-        self.init_logger = init_logger
+        self._daemon = daemonize(self._listener.start, initializer=self.initializer)
+        self.initializer = initializer
         self.raise_on_exc = raise_on_exc
 
     @property
@@ -230,4 +230,4 @@ class QueueListenerDaemon(Generic[MessageType, ResultType]):
         refreshed daemon.
         """
         self.stop_listener(timeout)
-        self._daemon = daemonize(self._listener.start, initializer=self.init_logger)
+        self._daemon = daemonize(self._listener.start, initializer=self.initializer)
