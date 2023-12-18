@@ -88,9 +88,6 @@ class QueueListener(Generic[MessageType, ResultType]):
         self.stop_event = stop_event if stop_event is not None else Event()
         self.raise_on_exc = raise_on_exc
 
-    def _should_stop(self) -> bool:
-        return self.stop_event is None or self.stop_event.is_set()
-
     def listen(self):
         """Loop to dequeue messages and dispatch to handler threads."""
         while True:
