@@ -1,14 +1,20 @@
-import email
 import logging
 import multiprocessing as mp
+import platform
 import smtplib
+import textwrap
 from contextlib import ContextDecorator
 from dataclasses import asdict, dataclass
+from email import encoders
+from email.mime.base import MIMEBase
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from logging.handlers import (QueueHandler, QueueListener,
                               TimedRotatingFileHandler)
 from pathlib import Path
-from typing import (Any, Callable, Dict, List, Literal, Optional, ParamSpec,
-                    Tuple, TypeAlias, TypeVar, Union)
+from ssl import SSLContext, _create_stdlib_context
+from typing import (Any, Callable, Dict, Iterable, List, Literal, Optional,
+                    ParamSpec, Tuple, TypeAlias, TypeVar, Union)
 
 import jinja2
 from pymongo import MongoClient
@@ -16,6 +22,7 @@ from pymongo.collection import Collection
 from pymongo.database import Database
 from pymongo.errors import ServerSelectionTimeoutError
 
+from . import PROJECT_ROOT
 from .configuration import MongoConfig
 
 LogLevel: TypeAlias = Union[
@@ -109,42 +116,208 @@ class TimedRotatingFileHandlerWithHeader(TimedRotatingFileHandler):
         return stream
 
 
-class BufferingSMTPHandler(logging.handlers.BufferingHandler):
+class MessageTypeAdapter(logging.LoggerAdapter):
+    """Treat unexpected kwargs in logging methods like "extra" args.
+
+    Logging methods accept a keyword argument "extra" whose value should be a
+    dict containing extra contextual information to be added to the LogRecord.
+    This adapter stores a list of extra keys to expect and automatically adds
+    them to the LogRecord as attributes without having to include them in an
+    "extra" dict.  The advantage of this is that custom handlers can then
+    format messages which reference these custom keys.
+
+    For example:
+    >>> app_logger = MessageTypeLoggingAdapter(logging.getLogger(), "email")
+    >>> app_logger.info("This message will be logged normally")
+    >>> app_logger.info(
+    ...     "This message will produce a LogRecord with attribute 'email' = 'foo'",
+    ...     email="foo"
+    ... )
+    """
+
     def __init__(
-        self, mailhost, port, username, password, fromaddr, toaddrs, subject, capacity
-    ):
-        logging.handlers.BufferingHandler.__init__(self, capacity)
+        self, logger: logging.Logger, *keys: List[str], **kwargs: Dict
+    ) -> None:
+        """
+        Args:
+            logger: logger instance to wrap
+            *keys: list of strings to treat as "extra" args in logging methods
+            **kwargs: dict of any extra contextual information to include with
+                LogRecords processed by this adapter
+        """
+        self.message_type_keys = keys
+        super().__init__(logger, kwargs)
+
+    def process(self, msg: str, kwargs: Dict) -> Tuple[str, Dict]:
+        extra = kwargs.setdefault("extra", {})
+        extra.update(self.extra)
+        for k in self.message_type_keys:
+            kwargs["extra"][k] = kwargs.pop(k, None)
+        return msg, kwargs
+
+
+class AttributeFilter(logging.Filter):
+    """Check if LogRecord has a given attribute.
+
+    The intended use-case is to check for attributes included in the record
+    via the logging methods' "extra" parameter.  For example, a custom SMTP
+    handler could filter for LogRecords containing an "email" attribute
+    pointing to a dict containing email data (sender, recipient, subject,
+    etc.).
+
+    If a record contains the target attribute, and if its value is a Mapping,
+    then the filter will modify the record's __dict__ in-place with the
+    key-value pairs in the target attribute.  This is done in order to allow
+    formatter template strings to reference keys contained in the target dict.
+    """
+
+    def __init__(self, attr_name: str) -> None:
+        """
+        Args:
+            message_type: name of target message type
+        """
+        self.attr_name = attr_name
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg_data = getattr(record, self.attr_name, None)
+        if msg_data is not None:
+            # add dict keys to record instance so they can be referenced in templates
+            # TODO: think of a better way to do this
+            if isinstance(msg_data, dict):
+                for k, v in msg_data.items():
+                    setattr(record, k, v)
+            return True
+        return False
+
+
+class EmailFormatter(logging.Formatter):
+    def __init__(
+        self,
+        body_template: str,
+        mime_type: str = "html",
+        defaultFromAddr: str = "",
+        defaultToAddrs: Iterable[str] = (),
+        defaultSubject: str = "",
+        defaultCCAddrs: Iterable[str] = (),
+        defaultBCCAddrs: Iterable[str] = (),
+    ) -> None:
+        self.defaults = {
+            "fromAddr": defaultFromAddr,
+            "toAddrs": defaultToAddrs,
+            "subject": defaultSubject,
+            "ccAddrs": defaultCCAddrs,
+            "bccAddrs": defaultBCCAddrs,
+        }
+
+    def format(self, record: logging.LogRecord) -> str:
+        msg = MIMEMultipart()
+        msg_data = getattr(record, "email", {})
+        msg["From"] = msg_data.get("fromAddr", self.defaults["fromAddr"])
+        msg["Subject"] = msg_data.get("subject", self.defaults["subject"])
+
+        # Don't include BCC addresses in the message (that's the whole point)
+        msg["To"] = ", ".join(msg_data.get("toAddrs", self.defaults["toAddrs"]))
+        msg["Cc"] = ", ".join(msg_data.get("ccAddrs", self.defaults["ccAddrs"]))
+
+        if "attachment" in msg_data:
+            file = Path(msg_data["attachment"])
+            if not file.is_absolute():
+                file = PROJECT_ROOT / file
+            attachment = MIMEBase("application", "octet-stream")
+            attachment.set_payload(file.read_bytes())
+            encoders.encode_base64(attachment)
+            attachment.add_header(
+                "Content-Disposition", f"attachment; filename = {file}"
+            )
+            msg.attach(attachment)
+        body = super().format(record)
+        msg.attach(MIMEText(body, self.mime_type))
+        return msg.as_string()
+
+
+class BufferingSMTPHandler(logging.handlers.BufferingHandler):
+    ATTRIBUTE_KEY = "email"
+
+    def __init__(
+        self,
+        body_template: str,
+        mime_type: str,
+        mailhost: str,
+        port: int,
+        capacity: int,
+        toAddrs: List[str] = (),
+        ccAddrs: List[str] = (),
+        bccAddrs: List[str] = (),
+        subject: str = "",
+        fromAddr: str = "",
+        username: Optional[str] = None,
+        password: Optional[str] = None,
+        ssl_context: Optional[SSLContext] = None,
+    ) -> None:
+        super().__init__(self, capacity)
+        self.body_template = body_template
+        self.mime_type = mime_type
         self.mailhost = mailhost
         self.mailport = port
         self.username = username
         self.password = password
-        self.fromaddr = fromaddr
-        if isinstance(toaddrs, str):
-            toaddrs = [toaddrs]
-        self.toaddrs = toaddrs
+        self.fromAddr = fromAddr
+        self.toAddrs = toAddrs
         self.subject = subject
-        self.setFormatter(logging.Formatter("%(asctime)s %(levelname)-5s %(message)s"))
 
-    def flush(self):
-        if len(self.buffer) > 0:
-            try:
-                smtp = smtplib.SMTP(self.mailhost, self.mailport)
-                smtp.starttls()
-                smtp.login(self.username, self.password)
-                msg = "From: %s\r\nTo: %s\r\nSubject: %s\r\n\r\n" % (
-                    self.fromaddr,
-                    ",".join(self.toaddrs),
-                    self.subject,
-                )
-                for record in self.buffer:
-                    s = self.format(record)
-                    msg = msg + s + "\r\n"
-                smtp.sendmail(self.fromaddr, self.toaddrs, msg)
-                smtp.quit()
-            except Exception:
-                if logging.raiseExceptions:
-                    raise
-            self.buffer = []
+        self._credentials = None
+        if username is not None or password is not None:
+            self._credentials = (username, password)
+
+        self._ssl_context = ssl_context
+
+        # only process messages with "email" attribute
+        self.addFilter(AttributeFilter("email"))
+        self.setFormatter(
+            EmailFormatter(
+                body_template,
+                mime_type,
+                defaultSubject=subject,
+                defaultToAddrs=toAddrs,
+                defaultFromAddr=fromAddr,
+                defaultCCAddrs=ccAddrs,
+                defaultBCCAddrs=bccAddrs,
+            )
+        )
+
+    def _get_smtp_connection(self):
+        smtp = smtplib.SMTP(host=self.mailhost, port=self.mailport)
+        if self._ssl_context is not None:
+            smtp.starttls(context=self._ssl_context)
+        if self._credentials is not None:
+            smtp.login(*self.credentials)
+        return smtp
+
+    def _get_sender(self, record: logging.LogRecord) -> str:
+        return getattr(record, "fromAddr", self.fromAddr)
+
+    def _get_recipients(self, record: logging.LogRecord) -> str:
+        recipients = (
+            getattr(record, "toAddrs", self.toAddrs)
+            + getattr(record, "ccAddrs", self.ccAddrs)
+            + getattr(record, "bccAddrs", self.bccAddrs)
+        )
+        return ",".join(recipients)
+
+    def flush(self) -> None:
+        if self.buffer:
+            with self._get_smtp_connection() as smtp:
+                while self.buffer:
+                    try:
+                        record = self.buffer.pop()
+                        smtp.sendmail(
+                            self._get_sender(record),
+                            self._get_recipients(record),
+                            self.format(record),
+                        )
+                    except Exception:
+                        if logging.raiseExceptions:
+                            raise
 
 
 class MongoLogHandler(logging.handlers.BufferingHandler):
@@ -189,7 +362,3 @@ class MongoLogHandler(logging.handlers.BufferingHandler):
 
     def close(self):
         ...
-
-    def emit_many(self, records: List[logging.LogRecord]) -> None:
-        if self._collection is not None:
-            self._collection.insert_many(self._buffer)
