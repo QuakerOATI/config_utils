@@ -13,8 +13,8 @@ from logging.handlers import (QueueHandler, QueueListener,
                               TimedRotatingFileHandler)
 from pathlib import Path
 from ssl import SSLContext, _create_stdlib_context
-from typing import (Any, Callable, Dict, Iterable, List, Literal, Optional,
-                    ParamSpec, Tuple, TypeAlias, TypeVar, Union)
+from typing import (Any, Callable, Dict, Iterable, List, Literal, Mapping,
+                    Optional, ParamSpec, Tuple, TypeAlias, TypeVar, Union)
 
 import jinja2
 from pymongo import MongoClient
@@ -191,22 +191,48 @@ class AttributeFilter(logging.Filter):
 
 
 class EmailFormatter(logging.Formatter):
+    """Format LogRecords as emails using data stored in "extra" record attrs.
+
+    The formatter expects LogRecords to have an attribute "email"
+    containing a Mapping of email-related data, in the following form:
+        record.email = {
+            "mime_type": str,
+            "fromAddr": str,
+            "toAddrs": List[str],
+            "subject": str,
+            "ccAddrs": List[str],
+            "attachment": str,
+            # more optional key-value pairs
+        }
+    The contructor takes optional default values for each key; individual
+    records missing one or more keys will fall back to these defaults when
+    formatted.
+
+    This class is designed to be used with the BufferingSMTPHandler, which
+    will automatically add an instance of EmailFormatter on construction.
+    This class should therefore likely not be constructed directly.
+    """
+
     def __init__(
         self,
-        body_template: str,
-        mime_type: str = "html",
+        body_template: str = "%(message)s",
+        datefmt: Optional[str] = None,
+        style: Optional[str] = None,
+        mime_type: str = "text",
         defaultFromAddr: str = "",
         defaultToAddrs: Iterable[str] = (),
         defaultSubject: str = "",
         defaultCCAddrs: Iterable[str] = (),
-        defaultBCCAddrs: Iterable[str] = (),
+        defaultAttachment: Optional[str] = None,
     ) -> None:
+        super().__init__(body_template, datefmt, style)
+        self.mime_type = mime_type
         self.defaults = {
+            "subject": defaultSubject,
             "fromAddr": defaultFromAddr,
             "toAddrs": defaultToAddrs,
-            "subject": defaultSubject,
             "ccAddrs": defaultCCAddrs,
-            "bccAddrs": defaultBCCAddrs,
+            "attachment": defaultAttachment,
         }
 
     def format(self, record: logging.LogRecord) -> str:
@@ -214,13 +240,15 @@ class EmailFormatter(logging.Formatter):
         msg_data = getattr(record, "email", {})
         msg["From"] = msg_data.get("fromAddr", self.defaults["fromAddr"])
         msg["Subject"] = msg_data.get("subject", self.defaults["subject"])
+        body = super().format(record)
 
         # Don't include BCC addresses in the message (that's the whole point)
         msg["To"] = ", ".join(msg_data.get("toAddrs", self.defaults["toAddrs"]))
         msg["Cc"] = ", ".join(msg_data.get("ccAddrs", self.defaults["ccAddrs"]))
 
-        if "attachment" in msg_data:
-            file = Path(msg_data["attachment"])
+        attachment = msg_data.get("attachment", self.defaults["attachment"])
+        if attachment is not None:
+            file = Path(attachment)
             if not file.is_absolute():
                 file = PROJECT_ROOT / file
             attachment = MIMEBase("application", "octet-stream")
@@ -230,21 +258,20 @@ class EmailFormatter(logging.Formatter):
                 "Content-Disposition", f"attachment; filename = {file}"
             )
             msg.attach(attachment)
-        body = super().format(record)
-        msg.attach(MIMEText(body, self.mime_type))
+        msg.attach(MIMEText(super().format(record), self.mime_type))
         return msg.as_string()
 
 
 class BufferingSMTPHandler(logging.handlers.BufferingHandler):
-    ATTRIBUTE_KEY = "email"
-
     def __init__(
         self,
+        capacity: int,
         body_template: str,
         mime_type: str,
         mailhost: str,
         port: int,
-        capacity: int,
+        datefmt: Optional[str] = None,
+        template_style: Optional[str] = None,
         toAddrs: List[str] = (),
         ccAddrs: List[str] = (),
         bccAddrs: List[str] = (),
@@ -253,17 +280,19 @@ class BufferingSMTPHandler(logging.handlers.BufferingHandler):
         username: Optional[str] = None,
         password: Optional[str] = None,
         ssl_context: Optional[SSLContext] = None,
+        attachment: Optional[str] = None,
     ) -> None:
+        # parent class will automatically flush if buffer reaches capacity
         super().__init__(self, capacity)
-        self.body_template = body_template
+
+        # the formatter will "own" the remaining constructor args
         self.mime_type = mime_type
         self.mailhost = mailhost
         self.mailport = port
-        self.username = username
-        self.password = password
         self.fromAddr = fromAddr
         self.toAddrs = toAddrs
-        self.subject = subject
+        self.ccAddrs = ccAddrs
+        self.bccAddrs = bccAddrs
 
         self._credentials = None
         if username is not None or password is not None:
@@ -271,17 +300,19 @@ class BufferingSMTPHandler(logging.handlers.BufferingHandler):
 
         self._ssl_context = ssl_context
 
-        # only process messages with "email" attribute
+        # only process records with "email" attribute
         self.addFilter(AttributeFilter("email"))
         self.setFormatter(
             EmailFormatter(
                 body_template,
-                mime_type,
-                defaultSubject=subject,
-                defaultToAddrs=toAddrs,
+                datefmt,
+                style=template_style,
+                mime_type=mime_type,
                 defaultFromAddr=fromAddr,
+                defaultToAddrs=toAddrs,
+                defaultSubject=subject,
                 defaultCCAddrs=ccAddrs,
-                defaultBCCAddrs=bccAddrs,
+                defaultAttachment=attachment,
             )
         )
 
