@@ -22,8 +22,8 @@ from pymongo.collection import Collection
 from pymongo.database import Database
 from pymongo.errors import ServerSelectionTimeoutError
 
-from . import PROJECT_ROOT
 from .configuration import MongoConfig
+from .file_utils import resolve_path
 
 LogLevel: TypeAlias = Union[
     Literal[
@@ -217,7 +217,7 @@ class EmailFormatter(logging.Formatter):
         self,
         body_template: str = "%(message)s",
         datefmt: Optional[str] = None,
-        style: Optional[str] = None,
+        style: Optional[str] = "%",
         mime_type: str = "text",
         defaultFromAddr: str = "",
         defaultToAddrs: Iterable[str] = (),
@@ -240,7 +240,6 @@ class EmailFormatter(logging.Formatter):
         msg_data = getattr(record, "email", {})
         msg["From"] = msg_data.get("fromAddr", self.defaults["fromAddr"])
         msg["Subject"] = msg_data.get("subject", self.defaults["subject"])
-        body = super().format(record)
 
         # Don't include BCC addresses in the message (that's the whole point)
         msg["To"] = ", ".join(msg_data.get("toAddrs", self.defaults["toAddrs"]))
@@ -248,9 +247,7 @@ class EmailFormatter(logging.Formatter):
 
         attachment = msg_data.get("attachment", self.defaults["attachment"])
         if attachment is not None:
-            file = Path(attachment)
-            if not file.is_absolute():
-                file = PROJECT_ROOT / file
+            file = resolve_path(attachment)
             attachment = MIMEBase("application", "octet-stream")
             attachment.set_payload(file.read_bytes())
             encoders.encode_base64(attachment)
@@ -271,7 +268,7 @@ class BufferingSMTPHandler(logging.handlers.BufferingHandler):
         mailhost: str,
         port: int,
         datefmt: Optional[str] = None,
-        template_style: Optional[str] = None,
+        template_style: Optional[str] = "%",
         toAddrs: List[str] = (),
         ccAddrs: List[str] = (),
         bccAddrs: List[str] = (),
@@ -283,7 +280,7 @@ class BufferingSMTPHandler(logging.handlers.BufferingHandler):
         attachment: Optional[str] = None,
     ) -> None:
         # parent class will automatically flush if buffer reaches capacity
-        super().__init__(self, capacity)
+        super().__init__(capacity)
 
         # the formatter will "own" the remaining constructor args
         self.mime_type = mime_type
@@ -322,17 +319,19 @@ class BufferingSMTPHandler(logging.handlers.BufferingHandler):
             smtp.starttls(context=self._ssl_context)
         if self._credentials is not None:
             smtp.login(*self.credentials)
+        smtp.connect(host=self.mailhost, port=self.mailport)
+        smtp.ehlo()
         return smtp
 
     def _get_sender(self, record: logging.LogRecord) -> str:
         return getattr(record, "fromAddr", self.fromAddr)
 
     def _get_recipients(self, record: logging.LogRecord) -> str:
-        recipients = (
-            getattr(record, "toAddrs", self.toAddrs)
-            + getattr(record, "ccAddrs", self.ccAddrs)
-            + getattr(record, "bccAddrs", self.bccAddrs)
-        )
+        recipients = [
+            *getattr(record, "toAddrs", self.toAddrs),
+            *getattr(record, "ccAddrs", self.ccAddrs),
+            *getattr(record, "bccAddrs", self.bccAddrs),
+        ]
         return ",".join(recipients)
 
     def flush(self) -> None:
