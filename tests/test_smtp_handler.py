@@ -131,3 +131,16 @@ def test_logger_setup(smtpd, template_vars, template, smtp_logger_adapter, subje
     """
     smtp_logger_adapter.info("Hi there", email=template_vars)
     assert len(smtpd.messages) == 1
+    message = smtpd.messages[0]
+    assert message.get_content_type() == "multipart/mixed"
+    body = None
+    for part in message.walk():
+        ctype = part.get_content_type()
+        disp = part.get_content_disposition()
+        if disp is not None and "attachment" in disp:
+            continue
+        elif ctype == "text/html":
+            body = part.get_payload(decode=True)
+            break
+    assert body is not None
+    assert body.decode() == (template % template_vars).replace("\n", "\r\n")
