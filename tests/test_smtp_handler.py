@@ -144,3 +144,8 @@ def test_logger_setup(smtpd, template_vars, template, smtp_logger_adapter, subje
             break
     assert body is not None
     assert body.decode() == (template % template_vars).replace("\n", "\r\n")
+
+
+def test_non_smtp_log_messages(smtpd, smtp_logger_adapter):
+    smtp_logger_adapter.info("This is an informational log message")
+    assert len(smtpd.messages) == 0
