@@ -3,7 +3,8 @@ import textwrap
 
 import pytest
 
-from config_utils.log_utils import BufferingSMTPHandler, MessageTypeAdapter
+from config_utils.logging.adapters import MessageTypeAdapter
+from config_utils.logging.handlers import BufferingSMTPHandler
 
 
 @pytest.fixture(
