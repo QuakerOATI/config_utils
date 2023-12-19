@@ -32,6 +32,10 @@ dev = [
     "ipython>=8.18.1",
     "black>=24.1a1",
 ]
+test = [
+    "pytest>=7.4.3",
+    "pytest-smtpd>=0.1.0",
+]
 [build-system]
 requires = ["pdm-backend"]
 build-backend = "pdm.backend"
