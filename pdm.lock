@@ -4,8 +4,8 @@
 [metadata]
 groups = ["default", "dev", "test"]
 strategy = ["cross_platform"]
-lock_version = "4.4"
-content_hash = "sha256:75253ab264ed6191661498dc2775cfcd304f2b7f6371b9b1df892ccc7a84edb4"
+lock_version = "4.4.1"
+content_hash = "sha256:70b74df943879fdc5a83ae61a4028e2b1ddf05e108f4cc87548afda8e91ca556"
 
 [[package]]
 name = "aiohttp"
@@ -281,6 +281,20 @@ files = [
 ]
 
 [[package]]
+name = "dataclasses-json"
+version = "0.6.3"
+requires_python = ">=3.7,<4.0"
+summary = "Easily serialize dataclasses to and from JSON."
+dependencies = [
+    "marshmallow<4.0.0,>=3.18.0",
+    "typing-inspect<1,>=0.4.0",
+]
+files = [
+    {file = "dataclasses_json-0.6.3-py3-none-any.whl", hash = "sha256:4aeb343357997396f6bca1acae64e486c3a723d8f5c76301888abeccf0c45176"},
+    {file = "dataclasses_json-0.6.3.tar.gz", hash = "sha256:35cb40aae824736fdf959801356641836365219cfe14caeb115c39136f775d2a"},
+]
+
+[[package]]
 name = "decorator"
 version = "5.1.1"
 requires_python = ">=3.5"
@@ -533,6 +547,19 @@ files = [
     {file = "MarkupSafe-2.1.3-cp312-cp312-win32.whl", hash = "sha256:715d3562f79d540f251b99ebd6d8baa547118974341db04f5ad06d5ea3eb8007"},
     {file = "MarkupSafe-2.1.3-cp312-cp312-win_amd64.whl", hash = "sha256:1b8dd8c3fd14349433c79fa8abeb573a55fc0fdd769133baac1f5e07abf54aeb"},
     {file = "MarkupSafe-2.1.3.tar.gz", hash = "sha256:af598ed32d6ae86f1b747b82783958b1a4ab8f617b06fe68795c7f026abbdcad"},
+]
+
+[[package]]
+name = "marshmallow"
+version = "3.20.1"
+requires_python = ">=3.8"
+summary = "A lightweight library for converting complex datatypes to and from native Python datatypes."
+dependencies = [
+    "packaging>=17.0",
+]
+files = [
+    {file = "marshmallow-3.20.1-py3-none-any.whl", hash = "sha256:684939db93e80ad3561392f47be0230743131560a41c5110684c16e21ade0a5c"},
+    {file = "marshmallow-3.20.1.tar.gz", hash = "sha256:5d2371bbe42000f2b3fb5eaa065224df7d8f8597bc19a1bbfa5bfe7fba8da889"},
 ]
 
 [[package]]
@@ -985,6 +1012,31 @@ version = "1.0.0"
 summary = "Various objects to denote special meanings in python"
 files = [
     {file = "sentinels-1.0.0.tar.gz", hash = "sha256:7be0704d7fe1925e397e92d18669ace2f619c92b5d4eb21a89f31e026f9ff4b1"},
+]
+
+[[package]]
+name = "setuptools"
+version = "69.0.2"
+requires_python = ">=3.8"
+summary = "Easily download, build, install, upgrade, and uninstall Python packages"
+files = [
+    {file = "setuptools-69.0.2-py3-none-any.whl", hash = "sha256:1e8fdff6797d3865f37397be788a4e3cba233608e9b509382a2777d25ebde7f2"},
+    {file = "setuptools-69.0.2.tar.gz", hash = "sha256:735896e78a4742605974de002ac60562d286fa8051a7e2299445e8e8fbb01aa6"},
+]
+
+[[package]]
+name = "setuptools-scm"
+version = "8.0.4"
+requires_python = ">=3.8"
+summary = "the blessed package to manage your versions by scm tags"
+dependencies = [
+    "packaging>=20",
+    "setuptools",
+    "typing-extensions",
+]
+files = [
+    {file = "setuptools-scm-8.0.4.tar.gz", hash = "sha256:b5f43ff6800669595193fd09891564ee9d1d7dcb196cab4b2506d53a2e1c95c7"},
+    {file = "setuptools_scm-8.0.4-py3-none-any.whl", hash = "sha256:b47844cd2a84b83b3187a5782c71128c28b4c94cad8bfb871da2784a5cb54c4f"},
 ]
 
 [[package]]
