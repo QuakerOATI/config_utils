@@ -44,5 +44,5 @@ requires = ["pdm-backend"]
 build-backend = "pdm.backend"
 [tool.pdm.version]
 source = "scm"
-write_to = "src/_version.py"
+write_to = "_version.py"
 write_template = "__version__ = '{}'"
