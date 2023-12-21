@@ -1,7 +1,8 @@
 import warnings
 from contextlib import contextmanager
+from inspect import isbuiltin, isclass, isfunction, ismodule
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Type
 
 _PROJECT_ROOT: Optional[Path] = Path(".")
 __INIT_CALLED: bool = False
@@ -37,3 +38,20 @@ def resolve_path(path: str) -> Path:
     if not path.is_absolute():
         path = _PROJECT_ROOT / path
     return path.resolve()
+
+
+def get_fully_qualified_name(obj: Type) -> str:
+    """Get the fully-qualified name of an object."""
+    if isclass(obj) or isfunction(obj):
+        return f"{obj.__module__}.{obj.__qualname__}"
+    elif ismodule(obj) or isbuiltin(obj):
+        return obj.__name__
+    else:
+        name = ""
+        if hasattr(obj, "__module__"):
+            name += obj.__module__
+        if hasattr(obj, "__qualname__"):
+            name += f".{obj.__qualname__}"
+        elif hasattr(obj, "__name__"):
+            name += f".{obj.__name__}"
+        return name
