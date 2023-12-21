@@ -143,7 +143,7 @@ class QueueListenerDaemon(Generic[MessageType, ResultType]):
         ctx: mp.context.BaseContext,
         queue: mp.queues.Queue,
         handler: Callable[[MessageType], ResultType],
-        initializer: Callable[None, None],
+        initializer: Optional[Callable[None, None]] = None,
         raise_on_exc: bool = True,
     ) -> None:
         """

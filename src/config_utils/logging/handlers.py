@@ -11,9 +11,13 @@ from pymongo.database import Database
 from pymongo.errors import ServerSelectionTimeoutError
 
 from ..configuration import MongoConfig
-from . import LogLevel, SharedLogMessage
 from .filters import AttributeFilter
 from .formatters import EmailFormatter
+from .server import SharedLogMessage
+from .types import LogLevel
+
+# Global collection of registered handlers
+_handlers = {}
 
 
 class SharedLogHandler(logging.handlers.QueueHandler):

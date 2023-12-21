@@ -7,6 +7,26 @@ from typing import Iterable, Optional
 
 from ..file_utils import resolve_path
 
+LOGFILE_COLUMNS = (
+    ("LEVEL", "%(levelname)s"),
+    ("DATETIME", "%(asctime)s"),
+    ("LOGGER", "%(name)s"),
+    ("MESSAGE", "%(message)s"),
+    ("MODULE", "%(module)s"),
+    ("FILENAME", "%(filename)s"),
+    ("FUNCTION", "%(funcname)s"),
+    ("LINENO", "%(lineno)s"),
+    ("THREAD", "%(threadName)s:%(thread)d"),
+    ("PID", "%(process)d"),
+)
+CONSOLE = "%(name)-12s: %(levelname)-8s %(message)s"
+TSV = "\t".join([s for _, s in LOGFILE_COLUMNS])
+
+
+class FormatterConfig:
+    format: str
+    datefmt: Optional[str]
+
 
 class EmailFormatter(logging.Formatter):
     """Format LogRecords as emails using data stored in "extra" record attrs.

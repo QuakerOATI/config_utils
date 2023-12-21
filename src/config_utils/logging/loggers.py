@@ -1,35 +1,4 @@
 import logging
-from collections import OrderedDict
-from dataclasses import dataclass
-from typing import Iterable, Optional, Type, TypeAlias, Union
-
-from . import LogLevel, _LoggingConfigurable
-from .filters import FilterConfig, FilterType
-
-
-@dataclass
-class LoggerConfig(_LoggingConfigurable):
-    level: LogLevel = logging.NOTSET
-    propagate: Optional[bool] = None
-    filters: Iterable[Union[FilterConfig, str]]
-
-
-def DeclarativeLogger(
-    level: LogLevel = logging.NOTSET,
-    propagate: Optional[bool] = None,
-    filters: Iterable[FilterType] = (),
-    handlers: Iterable[HandlerType] = (),
-) -> OrderedDict:
-    """Get a configuration dict representing a logger config."""
-    cfg = OrderedDict(level=level)
-    if propagate is not None:
-        cfg["propagate"] = propagate
-    filters, handlers = list(filters), list(handlers)
-    if filters:
-        cfg["filters"] = filters
-    if handlers:
-        cfg["handlers"] = handlers
-    return cfg
 
 
 class AdaptedLogger(logging.Logger):

@@ -3,6 +3,7 @@ import multiprocessing as mp
 import sys
 import threading
 from contextlib import ContextDecorator
+from logging.config import dictConfig
 from pathlib import Path
 from typing import Callable, Dict, Literal, Optional, TypeAlias, Union
 
@@ -148,7 +149,7 @@ class SharedLogListener(mp.Process):
 
     def handle_request(self, req: Dict) -> None:
         if self.CONFIG in req:
-            logging.config.dictConfig(req[self.CONFIG])
+            dictConfig(req[self.CONFIG])
         if self.RECORD in req:
             logging.getLogger(req[self.RECORD].name).handle(req[self.RECORD])
 

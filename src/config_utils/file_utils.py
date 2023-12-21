@@ -2,7 +2,7 @@ import warnings
 from contextlib import contextmanager
 from inspect import isbuiltin, isclass, isfunction, ismodule
 from pathlib import Path
-from typing import Optional, Type
+from typing import Generator, Optional, Type, Union
 
 _PROJECT_ROOT: Optional[Path] = Path(".")
 __INIT_CALLED: bool = False
@@ -18,7 +18,7 @@ def init_project_root(path: str) -> None:
 
 
 @contextmanager
-def project_root(path: str) -> None:
+def project_root(path: Union[str, Path] = _PROJECT_ROOT) -> Generator[Path, None, None]:
     """Temporarily set _PROJECT_ROOT global.
 
     Intended for use as a context manager.
@@ -27,7 +27,7 @@ def project_root(path: str) -> None:
     old_project_root = _PROJECT_ROOT
     try:
         _PROJECT_ROOT = Path(path)
-        yield
+        yield _PROJECT_ROOT
     finally:
         _PROJECT_ROOT = old_project_root
 
