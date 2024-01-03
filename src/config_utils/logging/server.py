@@ -23,7 +23,7 @@ class SharedLoggerException(Exception):
 def _handle_shared_log_message(msg: SharedLogMessage) -> None:
     """Apply the logging config in msg and handle the record.
 
-    This should ONLY be called in by loggers in the log listener's subprocess.
+    This should ONLY be called by loggers in the log listener's subprocess.
     It should never be necessary to call this function directly.
     """
     if msg.config is not None:

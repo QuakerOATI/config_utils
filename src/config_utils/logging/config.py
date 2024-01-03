@@ -1,112 +1,154 @@
 import logging
-from dataclasses import dataclass, field
-from functools import partial
+import sys
+from dataclasses import Field, dataclass, field, fields
+from functools import partial, singledispatchmethod
+from itertools import islice
 from logging import config as logging_config
-from operator import getitem
-from typing import Any, Callable, Dict, Iterable, Optional
+from operator import or_, setitem, truth
+from textwrap import shorten
+from typing import (Any, Callable, Dict, Generic, Iterable, Iterator, Optional,
+                    Protocol, TypeVar)
 
 from dataclasses_json import DataClassJsonMixin, config, dataclass_json
 
 from ..file_utils import get_fully_qualified_name
-from .types import FilterType, HandlerType, LogLevel
+from .types import DataclassType, FilterType, HandlerType, LogLevel
+from .utils import get_loglevel
+
+# class ContextAwareField(Field):
+#     def __init__(
+#         self,
+#         updaters: Dict[PathLike, DictTree.Updater] = {},
+#         update_args: Dict[PathLike, Iterable[Any]] = {},
+#         **kwargs,
+#     ) -> None:
+#         kwargs.setdefault("metadata").update(
+#             {
+#                 "context": updaters,
+#             }
+#         )
+#         super().__init__(**kwargs)
+#
+#     def update_context(self, parent: DataclassType, context: DictTree) -> dict:
+#         value = getattr(parent, self.name)
+#         for path, update in self.context.get("context", {}).items():
+#             context.update_path(path, update, (value,))
+#
+#     def value(self, owner: DataclassType) -> Any:
+#         return getattr(owner, self.name)
+#
+#     def bind_parent(self, func):
+#         return map_params(func)
+#
+#
+_callable = partial(
+    field,
+    metadata=config(
+        field_name="()",
+        encoder=get_fully_qualified_name,
+        decoder=logging_config._resolve,
+    ),
+)
+
+_log_level = partial(
+    field,
+    metadata=config(encoder=get_loglevel),
+    default=logging.NOTSET,
+)
+
+_dict_default = partial(field, default_factory=dict)
+
+# _spread_args = partial(
+#     ContextAwareField,
+#     update_functions={"..": or_},
+#     metadata=config(
+#         exclude=partial(truth, 1),
+#     ),
+# )
+#
+#
+# def _map_key(lookup_table_name: str) -> Field:
+#     return partial(
+#         ContextAwareField,
+#         update_functions={
+#             f"/{lookup_table_name}": setitem(),
+#             ".": ...,
+#         },
+#     )
 
 
-def callable_field(
-    default: Optional[Any] = None,
-    default_factory: Optional[Callable[[], Any]] = None,
-    init=True,
-    repr=True,
-    hash=True,
-    compare=True,
-):
-    """Factory function for dataclass fields JSON-encoded to "()".
+class LoggingConfig(DataClassJsonMixin):
+    """Mixin to encapsulate serialization of logging config objects."""
 
-    This is a convenience function to support the syntax of the logging
-    package's dictConfig mechanism.
-    """
-    return field(
-        metadata=config(
-            field_name="()",
-            encoder=get_fully_qualified_name,
-            decoder=logging_config._resolve,
-        ),
-        default=default,
-        init=init,
-        repr=repr,
-        hash=hash,
-        compare=compare,
-    )
-
-
-@dataclass
-class CustomLoggingObjectMixin(DataClassJsonMixin):
-    """Unpack custom logging configs' args on serialization"""
-
-    def to_dict(self, encode_json=False) -> Dict:
-        """Unpack self.args into returned dict."""
+    def to_dict(
+        self, encode_json=False, context: Optional[Dict[str, "LoggingConfig"]] = None
+    ) -> Dict:
+        """dict factory to ensure logging fields are correctly handled."""
         d = super().to_dict(encode_json)
-        args = d.pop("args", {})
-        return {**d, **args}
+        # args = d.pop("args", {})
+        # return {**d, **args}
+        for f in fields(self):
+            spec = f.metadata.get("logging_config", {})
 
 
 @dataclass
-class FormatterConfig(CustomLoggingObjectMixin):
+class FormatterConfig(LoggingConfig):
     format: str
     datefmt: Optional[str]
 
 
 @dataclass
-class FilterConfig(CustomLoggingObjectMixin):
-    func: FilterType = callable_field()
-    args: Dict[str, Any] = field(default_factory=dict)
+class FilterConfig(LoggingConfig):
+    func: FilterType = _callable()
+    args: Dict[str, Any] = _dict_default()
 
 
 @dataclass
-class HandlerConfig(CustomLoggingObjectMixin):
-    handler: HandlerType = callable_field()
-    level: LogLevel = field(
-        metadata=config(encoder=partial(getitem, logging._levelToName)),
-        default=logging.NOTSET,
-    )
-    formatter: Optional[FormatterConfig] = None
+class HandlerConfig(LoggingConfig):
+    handler: HandlerType = _callable()
+    level: LogLevel = _log_level()
+    formatter: Optional[FormatterConfig] = ...
     filters: Iterable[FilterConfig] = ()
-    args: Dict[str, Any] = field(default_factory=dict)
+    args: Dict[str, Any] = _dict_default()
+
+    def _update_context(self, context: "LoggingConfigContext") -> None:
+        if self.formatter is not None:
+            context.formatters[id(self.formatter)] = self.formatter
+        for filter in self.filters:
+            context.filters[id(filter)] = filter
 
 
 @dataclass
-class LoggerConfig(CustomLoggingObjectMixin):
+class LoggerConfig(LoggingConfig):
     name: str
     level: LogLevel = logging.NOTSET
     propagate: Optional[bool] = None
     filters: Iterable[FilterConfig] = ()
     handlers: Iterable[HandlerConfig] = ()
-    formatters: Iterable[FormatterConfig] = field(init=False)
 
-    def to_dict(
-        self,
-        encode_json=False,
-        disable_existing_loggers: bool = False,
-        version: int = 1,
-    ) -> dict:
-        ret = {
-            "version": version,
-            "disable_existing_loggers": disable_existing_loggers,
-        }
-        handlers = {}
-        formatters = {}
-        for i, h in enumerate(self.handlers):
-            ret.setdefault("handlers", {})[str(i)] = h.to_dict()
-            handlers.append(str(i))
-            if h.formatter is not None:
-                formatters[str(len(formatters))] = h.formatter.to_dict()
-        d = super().to_dict(encode_json)
-        del d["name"]
-        d["handlers"] = ...
-        return ret
+
+@dataclass
+class LoggingConfigContext(LoggingConfig):
+    formatters: Dict[str, FormatterConfig] = _dict_default()
+    filters: Dict[str, FilterConfig] = _dict_default()
+    handlers: Dict[str, HandlerConfig] = _dict_default()
+    loggers: Dict[str, LoggerConfig] = _dict_default()
+    version: int = 1
+    root: Optional[LoggerConfig] = None
+    incremental: bool = False
+    disable_existing_loggers: bool = False
+
+
+@dataclass_json
+@dataclass
+class SetLogLevel:
+    name: str
+    level: LogLevel = _log_level()
 
 
 @dataclass_json
 @dataclass
 class SharedLogMessage:
     record: logging.LogRecord
-    config: LoggerConfig
+    setup: LoggerConfig
+    set_level: SetLogLevel

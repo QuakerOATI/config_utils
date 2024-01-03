@@ -3,7 +3,7 @@ import smtplib
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 from ssl import SSLContext
-from typing import List, Optional, Tuple
+from typing import Iterable, List, Optional, Tuple
 
 from pymongo import MongoClient
 from pymongo.collection import Collection
@@ -18,6 +18,15 @@ from .types import LogLevel
 
 # Global collection of registered handlers
 _handlers = {}
+
+
+def _ensure_list(obj) -> List[str]:
+    if isinstance(obj, str):
+        return [obj]
+    elif isinstance(obj, Iterable):
+        return list(map(str, obj))
+    else:
+        return [str(obj)]
 
 
 class SharedLogHandler(logging.handlers.QueueHandler):
@@ -59,9 +68,9 @@ class BufferingSMTPHandler(logging.handlers.BufferingHandler):
         port: int,
         datefmt: Optional[str] = None,
         template_style: Optional[str] = "%",
-        toAddrs: List[str] = (),
-        ccAddrs: List[str] = (),
-        bccAddrs: List[str] = (),
+        toAddrs: Iterable[str] = (),
+        ccAddrs: Iterable[str] = (),
+        bccAddrs: Iterable[str] = (),
         subject: str = "",
         fromAddr: str = "",
         username: Optional[str] = None,
@@ -77,9 +86,9 @@ class BufferingSMTPHandler(logging.handlers.BufferingHandler):
         self.mailhost = mailhost
         self.mailport = port
         self.fromAddr = fromAddr
-        self.toAddrs = toAddrs
-        self.ccAddrs = ccAddrs
-        self.bccAddrs = bccAddrs
+        self.toAddrs = _ensure_list(toAddrs)
+        self.ccAddrs = _ensure_list(ccAddrs)
+        self.bccAddrs = _ensure_list(bccAddrs)
 
         self._credentials = None
         if username is not None or password is not None:
@@ -91,15 +100,14 @@ class BufferingSMTPHandler(logging.handlers.BufferingHandler):
         self.addFilter(AttributeFilter("email"))
         self.setFormatter(
             EmailFormatter(
-                body_template,
-                datefmt,
+                body=body_template,
+                datefmt=datefmt,
                 style=template_style,
                 mime_type=mime_type,
-                defaultFromAddr=fromAddr,
-                defaultToAddrs=toAddrs,
-                defaultSubject=subject,
-                defaultCCAddrs=ccAddrs,
-                defaultAttachment=attachment,
+                fromAddr=fromAddr,
+                toAddrs=self.toAddrs,
+                subject=subject,
+                ccAddrs=self.ccAddrs,
             )
         )
 
@@ -113,16 +121,9 @@ class BufferingSMTPHandler(logging.handlers.BufferingHandler):
         smtp.ehlo()
         return smtp
 
-    def _get_sender(self, record: logging.LogRecord) -> str:
-        return getattr(record, "fromAddr", self.fromAddr)
-
-    def _get_recipients(self, record: logging.LogRecord) -> str:
-        recipients = [
-            *getattr(record, "toAddrs", self.toAddrs),
-            *getattr(record, "ccAddrs", self.ccAddrs),
-            *getattr(record, "bccAddrs", self.bccAddrs),
-        ]
-        return ",".join(recipients)
+    @property
+    def recipients(self):
+        return ",".join([*self.toAddrs, *self.ccAddrs, *self.bccAddrs])
 
     def flush(self) -> None:
         if self.buffer:
@@ -131,8 +132,8 @@ class BufferingSMTPHandler(logging.handlers.BufferingHandler):
                     try:
                         record = self.buffer.pop()
                         smtp.sendmail(
-                            self._get_sender(record),
-                            self._get_recipients(record),
+                            self.fromAddr,
+                            self.recipients,
                             self.format(record),
                         )
                     except Exception:

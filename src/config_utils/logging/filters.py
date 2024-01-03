@@ -1,7 +1,7 @@
 import logging
 from copy import copy
 
-from .types import LogLevel
+from .types import LogLevel, Mapping
 
 
 class ReverseLogFilter(logging.Filter):
@@ -40,13 +40,13 @@ class AttributeFilter(logging.Filter):
 
     def filter(self, record: logging.LogRecord) -> bool:
         msg_data = getattr(record, self.attr_name, None)
-        if msg_data is not None:
+        if msg_data is not None and bool(msg_data):
             new_record = copy(record)
             # add dict keys to record instance so they can be referenced in
             # templates
             # returning the copy ensures these attributes are not "leaked"
             # to other handlers
-            if isinstance(msg_data, dict):
+            if isinstance(msg_data, Mapping):
                 for k, v in msg_data.items():
                     setattr(new_record, k, v)
             return new_record

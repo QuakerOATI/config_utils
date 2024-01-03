@@ -1,11 +1,7 @@
 import logging
-from email import encoders
-from email.mime.base import MIMEBase
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 from typing import Iterable, Optional
 
-from ..file_utils import resolve_path
+from .email import Email
 
 LOGFILE_COLUMNS = (
     ("LEVEL", "%(levelname)s"),
@@ -21,11 +17,6 @@ LOGFILE_COLUMNS = (
 )
 CONSOLE = "%(name)-12s: %(levelname)-8s %(message)s"
 TSV = "\t".join([s for _, s in LOGFILE_COLUMNS])
-
-
-class FormatterConfig:
-    format: str
-    datefmt: Optional[str]
 
 
 class EmailFormatter(logging.Formatter):
@@ -53,45 +44,29 @@ class EmailFormatter(logging.Formatter):
 
     def __init__(
         self,
-        body_template: str = "%(message)s",
+        body: str = "%(message)s",
         datefmt: Optional[str] = None,
         style: Optional[str] = "%",
         mime_type: str = "text",
-        defaultFromAddr: str = "",
-        defaultToAddrs: Iterable[str] = (),
-        defaultSubject: str = "",
-        defaultCCAddrs: Iterable[str] = (),
-        defaultAttachment: Optional[str] = None,
+        fromAddr: str = "",
+        toAddrs: Iterable[str] = (),
+        subject: str = "",
+        ccAddrs: Iterable[str] = (),
     ) -> None:
-        super().__init__(body_template, datefmt, style)
-        self.mime_type = mime_type
-        self.defaults = {
-            "subject": defaultSubject,
-            "fromAddr": defaultFromAddr,
-            "toAddrs": defaultToAddrs,
-            "ccAddrs": defaultCCAddrs,
-            "attachment": defaultAttachment,
+        self._email_fmt = {
+            "subject": subject,
+            "body": body,
+            "mime_type": mime_type,
+            "fromAddr": fromAddr,
+            "toAddrs": toAddrs,
+            "ccAddrs": ccAddrs,
         }
+        super().__init__(str(Email(**self._email_fmt)), datefmt, style)
 
-    def format(self, record: logging.LogRecord) -> str:
-        msg = MIMEMultipart()
-        msg_data = getattr(record, "email", {})
-        msg["From"] = msg_data.get("fromAddr", self.defaults["fromAddr"])
-        msg["Subject"] = msg_data.get("subject", self.defaults["subject"])
-
-        # Don't include BCC addresses in the message (that's the whole point)
-        msg["To"] = ", ".join(msg_data.get("toAddrs", self.defaults["toAddrs"]))
-        msg["Cc"] = ", ".join(msg_data.get("ccAddrs", self.defaults["ccAddrs"]))
-
-        attachment = msg_data.get("attachment", self.defaults["attachment"])
-        if attachment is not None:
-            file = resolve_path(attachment)
-            attachment = MIMEBase("application", "octet-stream")
-            attachment.set_payload(file.read_bytes())
-            encoders.encode_base64(attachment)
-            attachment.add_header(
-                "Content-Disposition", f"attachment; filename = {file}"
-            )
-            msg.attach(attachment)
-        msg.attach(MIMEText(super().format(record), self.mime_type))
-        return msg.as_string()
+    def get_attachment(self, record: logging.LogRecord) -> Optional[str]:
+        if hasattr(record, "attachment"):
+            return getattr(record, "attachment")
+        elif hasattr(record, "email"):
+            email_cfg = getattr(record, "email")
+            if isinstance(email_cfg, dict):
+                return email_cfg.get("attachment", None)

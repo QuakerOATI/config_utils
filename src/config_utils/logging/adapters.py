@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, List, Tuple
+from typing import Any, Dict, Tuple
 
 
 class MessageTypeAdapter(logging.LoggerAdapter):
@@ -21,22 +21,24 @@ class MessageTypeAdapter(logging.LoggerAdapter):
     ... )
     """
 
-    def __init__(
-        self, logger: logging.Logger, *keys: List[str], **kwargs: Dict
-    ) -> None:
+    def __init__(self, logger: logging.Logger, **kwargs: Dict[str, Any]) -> None:
         """
         Args:
             logger: logger instance to wrap
-            *keys: list of strings to treat as "extra" args in logging methods
             **kwargs: dict of any extra contextual information to include with
                 LogRecords processed by this adapter
         """
-        self.message_type_keys = keys
         super().__init__(logger, kwargs)
 
+    def _split_kwargs(self, kwargs):
+        # make sure to use copies so changes aren't leaked to other logging objects
+        extra = self.extra.copy()  # TODO: determine if this is necessary
+        for k in extra:
+            if k in kwargs:
+                extra[k] = kwargs.pop(k)
+        return kwargs, extra
+
     def process(self, msg: str, kwargs: Dict) -> Tuple[str, Dict]:
-        extra = kwargs.setdefault("extra", {})
-        extra.update(self.extra)
-        for k in self.message_type_keys:
-            kwargs["extra"][k] = kwargs.pop(k, None)
+        kwargs, extra = self._split_kwargs(kwargs)
+        kwargs.setdefault("extra", {}).update(extra)
         return msg, kwargs
