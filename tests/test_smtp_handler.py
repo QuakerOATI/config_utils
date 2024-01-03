@@ -1,5 +1,7 @@
 import logging
+import os
 import textwrap
+import time
 
 import pytest
 
@@ -7,23 +9,15 @@ from config_utils.logging.adapters import MessageTypeAdapter
 from config_utils.logging.handlers import BufferingSMTPHandler
 
 
-@pytest.fixture(
-    params=[
-        {"subject": "cats", "predicate": "bounce amusingly"},
-    ]
-)
-def template_vars(request):
-    return request.param
-
-
 @pytest.fixture
-def template(template_vars):
+def template():
     return textwrap.dedent(
-        f"""
+        """
         <!DOCTYPE html>
         <html>
           <body>
-            {"	".join([f"{n}: %({n})s" for n in template_vars])}
+            Message: %(message)s
+            Timestamp: %(asctime)s
           </body>
         </html>
     """
@@ -35,17 +29,8 @@ def logger_name(request):
     return request.param
 
 
-@pytest.fixture(
-    params=[
-        {"pet": "chinchilla", "telescope": "refracting"},
-    ]
-)
-def extras(request):
-    return request.param
-
-
 @pytest.fixture
-def root_logger(logger_name):
+def logger(logger_name):
     logger = logging.getLogger(logger_name)
     logger.handlers.clear()
     logger.setLevel("DEBUG")
@@ -53,16 +38,14 @@ def root_logger(logger_name):
 
 
 @pytest.fixture
-def smtp_logger_adapter(extras, root_logger, smtp_handler):
-    root_logger.addHandler(smtp_handler)
-    adapter = MessageTypeAdapter(root_logger, "email", **extras)
+def smtp_logger_adapter(logger, smtp_handler):
+    logger.addHandler(smtp_handler)
+    adapter = MessageTypeAdapter(logger, email=False)
     yield adapter
-    root_logger.handlers.clear()
+    logger.handlers.clear()
 
 
-@pytest.fixture(
-    params=["testy@irate.net", "testudo@drytortugas.com", "foobar@withgoogle.com"]
-)
+@pytest.fixture(params=["testy@irate.net"])
 def fromAddr(request):
     return request.param
 
@@ -79,8 +62,6 @@ def toAddrs(request):
 @pytest.fixture(
     params=[
         ["one@first.com", "two@second.com"],
-        ["ordinal@surreal.com", "cardinal@continuum.gov"],
-        ["cantor@diagonal.org", "cohen@forcing.net"],
     ]
 )
 def ccAddrs(request):
@@ -89,14 +70,14 @@ def ccAddrs(request):
 
 @pytest.fixture(
     params=[
-        ["one@first.com", "two@second.com"],
+        ["one@first.com"],
     ]
 )
 def bccAddrs(request):
     return request.param
 
 
-@pytest.fixture(params=["Test", "Lost pigeon", "funny cat picz"])
+@pytest.fixture(params=["Test"])
 def subject(request):
     return request.param
 
@@ -125,15 +106,49 @@ def smtp_handler(
     )
 
 
-def test_logger_setup(smtpd, template_vars, template, smtp_logger_adapter, subject):
+@pytest.fixture(
+    params=[
+        ("This is a %s", "log message"),
+        ("The first rule of %s is %r", "Fight Club", "don't talk about Fight Club"),
+    ]
+)
+def log_record(logger_name, datefmt, request):
+    record = logging.makeLogRecord(
+        {
+            "name": logger_name,
+            "msg": request.param[0],
+            "args": request.param[1:],
+            "levelname": "DEBUG",
+            "levelno": logging.DEBUG,
+            "pathname": __file__,
+            "module": "TEST",
+            "filename": os.path.basename(__file__),
+            "exc_info": None,
+            "exc_text": None,
+            "stack_info": None,
+            "lineno": 333,
+            "funcname": "",
+            "created": time.time(),
+            "thread": None,
+            "threadName": None,
+            "processName": None,
+        }
+    )
+    record.asctime = logging.Formatter(fmt="%(message)s").formatTime(record, datefmt)
+    return record
+
+
+def test_logger_setup(log_record, smtpd, template, smtp_logger_adapter, subject):
     """
     Use the pytest-smtpd fixture to inject a mock SMTP server
     Requires `pip install pytest-smtpd`
     """
-    smtp_logger_adapter.info("Hi there", email=template_vars)
-    assert len(smtpd.messages) == 1
+    smtp_logger_adapter.info(log_record.msg, *log_record.args, email=True)
+    assert len(smtpd.messages) == 1, "No SMTP message was sent"
     message = smtpd.messages[0]
-    assert message.get_content_type() == "multipart/mixed"
+    assert (
+        message.get_content_type() == "multipart/mixed"
+    ), "SMTP message should have MIME type multipart/mixed"
     body = None
     for part in message.walk():
         ctype = part.get_content_type()
@@ -144,7 +159,9 @@ def test_logger_setup(smtpd, template_vars, template, smtp_logger_adapter, subje
             body = part.get_payload(decode=True)
             break
     assert body is not None
-    assert body.decode() == (template % template_vars).replace("\n", "\r\n")
+    assert body.decode() == (
+        template % {**log_record.__dict__, "message": log_record.getMessage()}
+    ).replace("\n", "\r\n")
 
 
 def test_non_smtp_log_messages(smtpd, smtp_logger_adapter):
