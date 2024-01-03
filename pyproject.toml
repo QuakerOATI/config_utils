@@ -2,43 +2,37 @@
 name = "config_utils"
 dynamic = ["version"]
 description = "Utilities for configuration and logging for projects with multiprocessing"
-authors = [
-    {name = "Michael Haynes", email = "antihaynes@gmail.com"},
-]
+authors = [{ name = "Michael Haynes", email = "antihaynes@gmail.com" }]
 dependencies = [
-    "makefun>=1.15.2",
-    "pymongo>=4.6.1",
-    "kafka-python>=2.0.2",
-    "rich>=13.7.0",
-    "boltons>=23.1.1",
-    "ipython>=8.18.1",
-    "pydantic>=2.5.2",
-    "wrapt>=1.16.0",
-    "gin-config>=0.5.0",
-    "jinja2>=3.1.2",
-    "dataclasses-json>=0.6.3",
+  "makefun>=1.15.2",
+  "pymongo>=4.6.1",
+  "kafka-python>=2.0.2",
+  "rich>=13.7.0",
+  "boltons>=23.1.1",
+  "ipython>=8.18.1",
+  "pydantic>=2.5.2",
+  "wrapt>=1.16.0",
+  "gin-config>=0.5.0",
+  "jinja2>=3.1.2",
+  "dataclasses-json>=0.6.3",
 ]
 requires-python = ">=3.11"
-readme = "README.md"
-license = {text = "MIT"}
+readme = "README.rst"
+license = { text = "MIT" }
 
 [project.optional-dependencies]
 dev = [
-    "ufmt>=2.3.0",
-    "pytest>=7.4.3",
-    "mongomock>=4.1.2",
-    "thx>=0.5.1",
-    "nox>=2023.4.22",
-    "mutmut>=2.4.4",
-    "ipython>=8.18.1",
-    "black>=24.1a1",
-    "setuptools-scm>=8.0.4",
+  "ufmt>=2.3.0",
+  "pytest>=7.4.3",
+  "mongomock>=4.1.2",
+  "thx>=0.5.1",
+  "nox>=2023.4.22",
+  "mutmut>=2.4.4",
+  "ipython>=8.18.1",
+  "black>=24.1a1",
+  "setuptools-scm>=8.0.4",
 ]
-test = [
-    "pytest>=7.4.3",
-    "pytest-smtpd>=0.1.0",
-    "mongomock>=4.1.2",
-]
+test = ["pytest>=7.4.3", "pytest-smtpd>=0.1.0", "mongomock>=4.1.2"]
 [build-system]
 requires = ["pdm-backend"]
 build-backend = "pdm.backend"
