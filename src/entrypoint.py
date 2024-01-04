@@ -16,8 +16,6 @@ Params = ParamSpec("Params")
 
 
 class SharedLogger(mp.managers.SyncManager):
-    import logging
-
     def __init__(
         self,
         handler_factory: Callable[[str], Iterable[logging.Handler]],
