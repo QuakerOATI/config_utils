@@ -4,17 +4,17 @@ dynamic = ["version"]
 description = "Utilities for configuration and logging for projects with multiprocessing"
 authors = [{ name = "Michael Haynes", email = "antihaynes@gmail.com" }]
 dependencies = [
-  "makefun>=1.15.2",
-  "pymongo>=4.6.1",
-  "kafka-python>=2.0.2",
-  "rich>=13.7.0",
-  "boltons>=23.1.1",
-  "ipython>=8.18.1",
-  "pydantic>=2.5.2",
-  "wrapt>=1.16.0",
-  "gin-config>=0.5.0",
-  "jinja2>=3.1.2",
-  "dataclasses-json>=0.6.3",
+    "makefun>=1.15.2",
+    "pymongo>=4.6.1",
+    "kafka-python>=2.0.2",
+    "rich>=13.7.0",
+    "boltons>=23.1.1",
+    "ipython>=8.18.1",
+    "pydantic>=2.5.3",
+    "wrapt>=1.16.0",
+    "gin-config>=0.5.0",
+    "jinja2>=3.1.2",
+    "dataclasses-json>=0.6.3",
 ]
 requires-python = ">=3.11"
 readme = "README.rst"
